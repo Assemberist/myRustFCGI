@@ -1,13 +1,15 @@
 use std::collections::HashSet;
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::thread;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 use std::result::Result;
 use std::sync::atomic::{AtomicU64, Ordering};
-
+use std::time::{Instant, Duration};
 
 mod limits;
 mod fcgi_variables;
+
+use std::array::from_fn as makearr;
 
 #[repr(u8)]
 #[derive(Debug)]
@@ -70,9 +72,147 @@ impl FcgiHeader {
     }
 }
 
-const HEADER_LENGTH: usize = 8;
-/*
-fn read_header(mut stream: TcpStream) -> Result<FcgiHeader, Error> {
+//const HEADER_LENGTH: usize = 8;
+
+struct Request {
+    header: Option<FcgiHeader>,
+    data: Vec<u8>,
+}
+
+impl Request {
+    fn new() -> Self {
+        Request { header: None, data: Vec::new() }
+    }
+}
+
+struct Flags{
+	new_clients: 			AtomicU64,
+	new_requests: 			AtomicU64,
+	running_clients:		AtomicU64,
+	client_disconnected: 	AtomicU64,
+}
+
+type ClientDataRef = Arc<Mutex<[Request; limits::MAX_REQ]>>;
+type ClientDataList = [ClientDataRef; limits::MAX_CONN];
+
+////////////////////////////////////////////////////////////////////////////////
+// Listener                                                           ////
+////////////////////////////////////////////////////////////////////////////////
+
+fn listener_loop(incoming: Arc<ClientDataList>,
+                 outcoming: Arc<[Arc<Mutex<Request>>; limits::MAX_CONN]>,
+                 flags: Arc<Flags>){
+    let allowed_ips = fcgi_variables::get_allowed_ips();
+    let listener = TcpListener::bind(limits::TCP_LISTENER_ADDR).unwrap();
+
+    for stream in listener.incoming() {
+        if let Some(stream) = check_connection(stream, &allowed_ips) {
+            let running_flags = flags.running_clients.load(Ordering::SeqCst);            
+
+            for i in 0..limits::MAX_CONN {
+                if (running_flags & (1 << i)) == 0  {
+                    flags.new_clients.fetch_or(1 << i, Ordering::SeqCst);
+
+                    let arg_incoming = incoming[i].clone();
+                    let arg_outcoming = outcoming[i].clone();
+                    let arg_flag = flags.clone();
+                    thread::spawn(move || client_loop(i, stream, arg_incoming, arg_outcoming, arg_flag));
+
+                    break;
+                }
+            }
+        }
+    }
+}
+
+fn check_connection(stream: Result<TcpStream, std::io::Error>,
+                    allowed_ips: &Option<HashSet<IpAddr>>) -> Option<TcpStream> {
+    let stream = stream.ok()?;
+    
+    if let Some(allowed) = allowed_ips {
+        let client_ip = stream.peer_addr().ok()?;
+        if !allowed.contains(&client_ip.ip()) { return None; }
+    }
+
+    Some(stream)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Client handler                                                           ////
+////////////////////////////////////////////////////////////////////////////////
+
+fn client_loop( id:         usize,
+                socket:     TcpStream,
+                incoming:   ClientDataRef,
+                outcoming:  Arc<Mutex<Request>>,
+                state:      Arc<Flags>){
+
+    // Init //
+    {
+        let new_client: [Request; limits::MAX_REQ] = makearr(|_| Request::new());
+        let mut nested_client = incoming.lock().unwrap();
+        *nested_client = new_client;
+    }
+
+    state.running_clients.fetch_or(1 << id, Ordering::SeqCst);
+
+    // Loop //
+    let last_activity_time = Instant::now();
+
+    loop {
+        if Instant::now() - last_activity_time > limits::CONNECTION_TIMEOUT { return; }
+
+        {
+            let client_data = incoming.lock().unwrap();
+            if let Some(req_number) = client_data.iter().position(|req| req.header.is_none()) {
+
+                //client_data[req_number] = Request { header: Some() };
+            }
+            else{
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+    // Твоя логика обработки
+    //println!("Connection accepted from: {:?}", stream.peer_addr());
+    //println!("{} {} {}", id, dataRef.read().unwrap().requests[0].data[0], state.new_client.load(Ordering::SeqCst));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Main                                                                     ////
+////////////////////////////////////////////////////////////////////////////////
+
+fn main() -> std::io::Result<()> {
+    let in_data: Arc<ClientDataList> =
+        Arc::new(
+            makearr(|_| Arc::new(Mutex::new(
+                makearr(|_| Request::new())
+            ))));
+
+    let out_data: Arc<[Arc<Mutex<Request>>; limits::MAX_CONN]> =
+        Arc::new(makearr(|_| Arc::new(Mutex::new(Request::new()))));
+
+    let flags =
+        Arc::new(Flags {
+            running_clients:        AtomicU64::new(0), 
+            new_requests:           AtomicU64::new(0),
+            client_disconnected:    AtomicU64::new(0),
+            new_clients:            AtomicU64::new(0),
+        });
+
+    let arg_in_data = in_data.clone();
+    let arg_out_data = out_data.clone();
+    let arg_flags = flags.clone();
+    thread::spawn(|| listener_loop(arg_in_data, arg_out_data, arg_flags));
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    Ok(())
+}
+
+/*fn read_header(mut stream: TcpStream) -> Result<FcgiHeader, Error> {
     let mut header = FcgiHeader { bytes: [0; HEADER_LENGTH] };
 
     let len = stream.read(&mut header.bytes)?;
@@ -86,7 +226,7 @@ fn read_header(mut stream: TcpStream) -> Result<FcgiHeader, Error> {
     }
 
     Ok(header)
-}
+}*/
 
 /*pub fn handle_client(stream: TcpStream) -> Result<(), Error> {
     let header = read_header(stream)?;
@@ -96,7 +236,7 @@ fn read_header(mut stream: TcpStream) -> Result<FcgiHeader, Error> {
     Ok(())
 }*/
 
-const BUFFER_LENGTH: usize = 2048;
+/*const BUFFER_LENGTH: usize = 2048;
 
 pub fn handle_client(mut stream: TcpStream) -> Result<[u8; 2048], Error> {
     loop {
@@ -127,7 +267,7 @@ pub fn handle_client(mut stream: TcpStream) -> Result<[u8; 2048], Error> {
     Ok(buff)
 }
 
-/*pub fn handle_client(mut stream: TcpStream) -> Result<[u8; 2048], Error> {
+pub fn handle_client(mut stream: TcpStream) -> Result<[u8; 2048], Error> {
     let mut buff: [u8; BUFFER_LENGTH] = [0; 2048];
     let len = stream.read(&mut buff)?;
 
@@ -181,103 +321,3 @@ pub fn handle_client(mut stream: TcpStream) -> Result<[u8; 2048], Error> {
 
     Ok(buff)
 }*/
-*/
-
-#[allow(dead_code)]
-struct Request {
-    header: Option<FcgiHeader>,
-    data: Vec<u8>,
-}
-
-#[allow(dead_code)]
-struct Client {
-    socket: TcpStream,
-    requests: [Request; limits::MAX_REQ],
-}
-
-#[allow(dead_code)]
-struct Flags{
-	new_clients: 			AtomicU64,
-	new_requests: 			AtomicU64,
-	running_clients:		AtomicU64,
-	client_disconnected: 	AtomicU64,
-}
-
-type ClientARef = Arc<RwLock<Option<Client>>>;
-type ClientList = [ClientARef; limits::MAX_CONN];
-
-fn check_connection(stream: Result<TcpStream, std::io::Error>,
-                    allowed_ips: &Option<HashSet<IpAddr>>) -> Option<TcpStream> {
-    let stream = stream.ok()?;
-    
-    if let Some(allowed) = allowed_ips {
-        let client_ip = stream.peer_addr().ok()?;
-        if !allowed.contains(&client_ip.ip()) { return None; }
-    }
-
-    Some(stream)
-}
-
-fn listener_loop(clients: Arc<ClientList>, flags: Arc<Flags>){
-    let allowed_ips = fcgi_variables::get_allowed_ips();
-    let listener = TcpListener::bind(limits::TCP_LISTENER_ADDR).unwrap();
-
-    for stream in listener.incoming() {
-        if let Some(stream) = check_connection(stream, &allowed_ips) {
-            let running_flags = flags.running_clients.load(Ordering::SeqCst);            
-
-            for i in 0..limits::MAX_CONN {
-                if (running_flags & (1 << i)) == 0  {
-                    let new_client =
-                        Some(Client {
-                            socket: stream,
-                            requests: [1..limits::MAX_REQ].map(
-                                |_| Request { header: None, data: [0; limits::MAX_REQ_LENGTH] }
-                            )
-                        });
-
-                    let mut nested_client = clients[i].write().unwrap();
-                    *nested_client = new_client;
-    
-                    flags.new_clients.fetch_or(1 << i, Ordering::SeqCst);
-                    flags.running_clients.fetch_or(1 << i, Ordering::SeqCst);
-
-                    let arg_client = clients[i].clone();
-                    let arg_flag = flags.clone();
-                    thread::spawn(move || client_loop(i, arg_client, arg_flag));
-
-                    break;
-                }
-            }
-        }
-    }
-}
-
-fn client_loop(id: usize, client: ClientARef, state: Arc<Flags>) {
-    // Твоя логика обработки
-    //println!("Connection accepted from: {:?}", stream.peer_addr());
-    //println!("{} {} {}", id, client.read().unwrap().requests[0].data[0], state.new_client.load(Ordering::SeqCst));
-}
-
-fn main() -> std::io::Result<()> {
-    let clients: Arc<ClientList> = Arc::new([Arc::new(RwLock::new(None)); limits::MAX_CONN]);
-
-    let flags =
-        Arc::new(Flags {
-            running_clients:        AtomicU64::new(0), 
-            new_requests:           AtomicU64::new(0),
-            client_disconnected:    AtomicU64::new(0),
-            new_clients:            AtomicU64::new(0),
-        });
-
-    let arg_clients = clients.clone();
-    let arg_flags = flags.clone();
-    thread::spawn(|| listener_loop(arg_clients, arg_flags));
-
-    loop {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-
-    Ok(())
-}
-	
