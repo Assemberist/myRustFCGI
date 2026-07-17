@@ -92,22 +92,21 @@ struct Flags{
 	client_disconnected: 	AtomicU64,
 }
 
-type ClientDataRef = Arc<Mutex<[Request; limits::MAX_REQ]>>;
-type ClientDataList = [ClientDataRef; limits::MAX_CONN];
+type AM<T> = Arc<Mutex<T>>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Listener                                                           ////
 ////////////////////////////////////////////////////////////////////////////////
 
-fn listener_loop(incoming: Arc<ClientDataList>,
-                 outcoming: Arc<[Arc<Mutex<Request>>; limits::MAX_CONN]>,
+fn listener_loop(incoming: AM<[AM<[Request; limits::MAX_REQ]>; limits::MAX_CONN]>,
+                 outcoming: AM<[AM<Request>; limits::MAX_CONN]>,
                  flags: Arc<Flags>){
     let allowed_ips = fcgi_variables::get_allowed_ips();
     let listener = TcpListener::bind(limits::TCP_LISTENER_ADDR).unwrap();
 
     for stream in listener.incoming() {
         if let Some(stream) = check_connection(stream, &allowed_ips) {
-            let running_flags = flags.running_clients.load(Ordering::SeqCst);            
+            let running_flags = flags.running_clients.load(Ordering::SeqCst);
 
             for i in 0..limits::MAX_CONN {
                 if (running_flags & (1 << i)) == 0  {
@@ -143,7 +142,7 @@ fn check_connection(stream: Result<TcpStream, std::io::Error>,
 
 fn client_loop( id:         usize,
                 socket:     TcpStream,
-                incoming:   ClientDataRef,
+                incoming:   AM<[Request; limits::MAX_REQ]>,
                 outcoming:  Arc<Mutex<Request>>,
                 state:      Arc<Flags>){
 
@@ -158,9 +157,11 @@ fn client_loop( id:         usize,
 
     // Loop //
     let last_activity_time = Instant::now();
+    
 
     loop {
         if Instant::now() - last_activity_time > limits::CONNECTION_TIMEOUT { return; }
+
 
         {
             let client_data = incoming.lock().unwrap();
@@ -183,7 +184,7 @@ fn client_loop( id:         usize,
 ////////////////////////////////////////////////////////////////////////////////
 
 fn main() -> std::io::Result<()> {
-    let in_data: Arc<ClientDataList> =
+    let in_data: Arc<[AM<[Request; limits::MAX_REQ]>; limits::MAX_CONN]> =
         Arc::new(
             makearr(|_| Arc::new(Mutex::new(
                 makearr(|_| Request::new())
