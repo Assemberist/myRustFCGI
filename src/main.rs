@@ -1,58 +1,60 @@
-use std::net::TcpListener;
-
+use std::{io::Write, net::TcpListener};
 
 mod fcgi;
-use fcgi::FcgiListener;
-use fcgi::RequestReadResult;
 
-use crate::fcgi::FcgiClient;
+use fcgi::{
+    FcgiHeader,
+    FcgiHeaderType,
+    FcgiRequest,
+    FcgiRequestStatus
+};
 
-////////////////////////////////////////////////////////////////////////////////
-// Listener                                                                 ////
-////////////////////////////////////////////////////////////////////////////////
-
-/*fn listener_loop(mut clients: [RefCell<Option<Client>>; limits::MAX_CONN]){
-    let allowed_ips = fcgi_variables::get_allowed_ips();
-    let listener = TcpListener::bind(limits::TCP_LISTENER_ADDR).unwrap();
-
-    let mut global_id = 0;
-
-    loop {
-        if let Some(new_pos) = clients.iter_mut().position(|c| c.get_mut().is_none()) {
-            if let Ok((stream, addr)) = listener.accept() {
-                if !check_connection(addr.ip(), &allowed_ips) { continue; }
-
-                let new_data = Client {
-                    id: global_id,
-                    pos: new_pos,
-                    socket: stream
-                };
-
-                clients[new_pos].replace(Some(new_data));
-
-                global_id = global_id + 1;
-            }
-        }
-        else {
-            thread::sleep(Duration::from_micros(100));
-        }
-    }
-}
-*/
+use fcgi::variables::get_allowed_ips;
+use fcgi::client::{FcgiListener, FcgiClient};
 
 fn main() -> std::io::Result<()> {
-    let listener = TcpListener::bind(fcgi::fcgi_limits::TCP_LISTENER_ADDR)?;
-    let socket = listener.accept_fcgi(None)?;
+    let allowed_ips = get_allowed_ips();
 
-    match socket.read_fcgi() {
-        RequestReadResult::CompleteRequest(req) => {
-            ()
-        }
-        RequestReadResult::PartialRequest(part) => {
-            ()
-        }
-        RequestReadResult::Nothing => (),
+    let listener = TcpListener::bind(fcgi::constatnts::TCP_LISTENER_ADDR)?;
+    let mut socket = listener.accept_fcgi(allowed_ips)?;
+
+    // Fcgi write = socket write
+    let data: Vec<u8> = vec![1,2,3];
+    let _write_result = socket.write(&data[..]); 
+
+    {
+        // Fcgi read
+        let request = socket.read_fcgi()?;
+
+        // Package content
+        let mut header = FcgiRequest::get_header(&request);
+        let _data = FcgiRequest::get_data(&request);
+
+        let _proto_ver = header.get_protocol_version();
+        let _request_type = header.get_type();
+        let _request_id = header.get_request_id();
+        let _data_len = header.get_content_length();
+        let _pad_len = header.get_padding_length();
+
+        let header_bin = header.as_mut_slice();
+        header_bin[0] = 1;
+
+        let _validity = 
+            match FcgiRequest::validate_fcgi_request(request) {
+                FcgiRequestStatus::IncompleteHeader           => Err("Incomlete header"),
+                FcgiRequestStatus::UnsupportedProtocolVersion => Err("Unsupported protocol version"),
+                FcgiRequestStatus::IncorrectDataLength        => Err("Incorrect data length"),
+
+                FcgiRequestStatus::Good => Ok(true),
+            };
     }
+
+    // Create
+    let _header = FcgiHeader::create(FcgiHeaderType::FcgiBeginRequest, 1, 15, 0);
+    let request = FcgiRequest::create(FcgiHeaderType::FcgiBeginRequest, 1, 15, 0);
+
+    // Package modification
+    let (_header, _data) = FcgiRequest::split_request(request)?;
 
     Ok(())
 }

@@ -1,9 +1,9 @@
 use std::io::{Error, ErrorKind};
-use std::net::{TcpListener, TcpStream, SocketAddr};
+use std::net::{TcpListener, TcpStream};
 use std::collections::HashSet;
 use std::net::IpAddr;
 
-use crate::fcgi::{FcgiListener, FcgiClient};
+use crate::fcgi::client::{FcgiClient, FcgiListener};
 
 impl FcgiListener<TcpStream, TcpStream> for TcpListener {
     fn accept_fcgi(&self, allowed_ips: Option<HashSet<IpAddr>>) -> Result<TcpStream, std::io::Error> {
@@ -18,9 +18,4 @@ impl FcgiListener<TcpStream, TcpStream> for TcpListener {
     }
 }
 
-impl FcgiClient<TcpStream> for TcpStream {
-    fn read_fcgi(&self) -> RequestReadResult;
-    fn read_fcgi_continue(&self, part: PartialRequest) -> RequestReadResult;
-
-    fn write_fcgi(&mut self, data: FcgiRequest) -> Result<(), &'static str>;
-}
+impl FcgiClient<TcpStream> for TcpStream { }
