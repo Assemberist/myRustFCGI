@@ -1,3 +1,5 @@
+//! Fcgi protocol module
+
 use std::result::Result;
 use std::io::Error;
 
@@ -42,6 +44,7 @@ impl<'a> FcgiRequest {
 
 	/// Return slice of data
     pub fn get_data(req: &'a Vec<u8>) -> &'a [u8] { &req[HEADER_LENGTH..] }
+    pub fn get_data_mut(req: &'a mut Vec<u8>) -> &'a mut [u8] { &mut req[HEADER_LENGTH..] }
 
 	/// Split request on Header and Data
     pub fn split_request(mut req: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>), Error>{

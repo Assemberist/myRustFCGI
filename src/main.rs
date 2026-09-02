@@ -22,13 +22,12 @@ fn main() -> std::io::Result<()> {
     let data: Vec<u8> = vec![1,2,3];
     let _write_result = socket.write(&data[..]); 
 
-    {
-        // Fcgi read
-        let request = socket.read_fcgi()?;
+    // Fcgi read
+    let mut request = socket.read_fcgi()?;
 
+    {
         // Package content
-        let mut header = FcgiRequest::get_header(&request);
-        let _data = FcgiRequest::get_data(&request);
+        let mut header = FcgiRequest::get_header(&mut request);
 
         let _proto_ver = header.get_protocol_version();
         let _request_type = header.get_type();
@@ -40,14 +39,21 @@ fn main() -> std::io::Result<()> {
         header_bin[0] = 1;
 
         let _validity = 
-            match FcgiRequest::validate_fcgi_request(request) {
+            match FcgiRequest::validate_fcgi_request(&request) {
                 FcgiRequestStatus::IncompleteHeader           => Err("Incomlete header"),
                 FcgiRequestStatus::UnsupportedProtocolVersion => Err("Unsupported protocol version"),
                 FcgiRequestStatus::IncorrectDataLength        => Err("Incorrect data length"),
 
                 FcgiRequestStatus::Good => Ok(true),
             };
+
+        let data = FcgiRequest::get_data(&request);
+        println!("{}", data[0]);
+
+        let data = FcgiRequest::get_data_mut(&mut request);
+        data[0] = 1;
     }
+
 
     // Create
     let _header = FcgiHeader::create(FcgiHeaderType::FcgiBeginRequest, 1, 15, 0);
