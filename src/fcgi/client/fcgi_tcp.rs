@@ -5,7 +5,7 @@ use std::net::IpAddr;
 
 use crate::fcgi::client::{FcgiClient, FcgiListener};
 
-impl FcgiListener<TcpStream, TcpStream> for TcpListener {
+impl FcgiListener<TcpStream> for TcpListener {
     fn accept_fcgi(&self, allowed_ips: Option<HashSet<IpAddr>>) -> Result<TcpStream, std::io::Error> {
         let (listener, addr) = (self as &TcpListener).accept()?;
         match allowed_ips {
@@ -18,4 +18,4 @@ impl FcgiListener<TcpStream, TcpStream> for TcpListener {
     }
 }
 
-impl FcgiClient<TcpStream> for TcpStream { }
+impl FcgiClient for TcpStream { }

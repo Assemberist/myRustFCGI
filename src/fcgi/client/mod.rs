@@ -8,12 +8,11 @@ use crate::fcgi::constatnts::HEADER_LENGTH;
 pub mod fcgi_tcp;
 pub mod fcgi_unix;
 
-pub trait FcgiListener<Stream: Read + Write,
-                       Client: FcgiClient<Stream>> {
+pub trait FcgiListener<Client: FcgiClient> {
     fn accept_fcgi(&self, allowed_ips: Option<HashSet<IpAddr>>) -> Result<Client, std::io::Error>;
 }
 
-pub trait FcgiClient<Stream: Read + Write> where Self: Read + Write {
+pub trait FcgiClient where Self: Read + Write {
     fn read_fcgi(&mut self) -> Result<Vec<u8>, Error> {
         let mut header = [0; HEADER_LENGTH];
 

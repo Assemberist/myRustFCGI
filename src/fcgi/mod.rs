@@ -1,14 +1,3 @@
-//! Fcgi protocol module
-
-use std::result::Result;
-use std::io::Error;
-
-use constatnts::HEADER_LENGTH;
-
-pub mod variables;
-pub mod constatnts;
-pub mod client;
-
 //! # About the library
 //! The library provides FastCGI (FCGI) api for rust applications.
 //! The API is extencion upon standard taits.
@@ -25,14 +14,44 @@ pub mod client;
 //!   - Construct response
 //!   - Send response
 //!
-//! <sub>TODO</sub> Add code example
+//! <code>
+//! 
+//!     use fcgi::client::{FcgiListener, FcgiClient};
 //!
-//! Socket listener realised as FcgiListener trait.
+//!     // Create listener (f.e. TCP)
+//!     let listener = TcpListener::bind("127.0.0.1")?;
+//!
+//!     // accept socket
+//!     let mut socket = listener.accept_fcgi(None)?;
+//!
+//!     // read Fcgi request (Vec<u8> where 0-7 bytes are header and rest is data).
+//!     let mut request = socket.read_fcgi()?;
+//!
+//!     // construct and modify FCGI request
+//!     let mut response = FcgiRequest::create(FcgiHeaderType::FcgiGetValuesResult, 1, 4, 0);
+//!     let mut data = FcgiRequest::get_data_mut(&mut response);
+//!     data[0] = 0;
+//!
+//!     // send constructed response
+//!     socket.write_all(&response)?;
+//! </code>
+//! 
+//! Socket listener realised in FcgiListener trait.
 //! Request Read/Write is realised in FcgiClient trait.
 //!
 //! The library don't provides highlevel abstraction for requests:
 //! FCGI Read returns `Vec<u8>`.
 //! Standard `Write` trait can be used to send FCGI request.
+
+use std::result::Result;
+use std::io::Error;
+
+use constatnts::HEADER_LENGTH;
+
+pub mod variables;
+pub mod constatnts;
+pub mod client;
+
 
 /// Provides functionality for operation with FCGI requests.
 /// FcgiRequest is abstraction over `Vec<u8>`. FCGI Header is 8 first bytes and rest is data block.
@@ -53,7 +72,7 @@ impl<'a> FcgiRequest {
     }
 
 	/// Checks integrity of FCGI request
-    pub fn validate_fcgi_request(req: Vec<u8>) -> FcgiRequestStatus {
+    pub fn validate_fcgi_request(req: &Vec<u8>) -> FcgiRequestStatus {
         if req.len() < 8 { return FcgiRequestStatus::IncompleteHeader; }
         if req[0] != 1 { return FcgiRequestStatus::UnsupportedProtocolVersion; }
 
@@ -70,7 +89,7 @@ impl<'a> FcgiRequest {
                     paddding_len:   u8)
                             -> Vec<u8>
     {
-        let mut req = Vec::with_capacity(8 + content_len as usize);
+        let mut req = vec![0; 8 + content_len as usize];
 
         req[0] = 1;
         req[1] = req_type as u8;
@@ -87,10 +106,17 @@ impl<'a> FcgiRequest {
 /// Status of partial FCGI request reading (Not applicable for blocking reading)
 #[repr(u8)]
 pub enum FcgiRequestStatus {
-    IncompleteHeader,				/// Only part of Header was read
-    UnsupportedProtocolVersion,		/// Only FCGI v1 protocol is supported
-    IncorrectDataLength,			/// Header specified more data than received
-    Good							/// All data received
+    /// Only part of Header was read
+    IncompleteHeader,
+
+    /// Only FCGI v1 protocol is supported
+    UnsupportedProtocolVersion,
+
+    /// Header specified more data than received
+    IncorrectDataLength,
+    
+    /// All data received
+    Good
 }
 
 #[repr(u8)]
@@ -126,7 +152,7 @@ pub enum FcgiHeaderType {
 /// Or
 ///
 /// | Size | Field | Shift      |
-/// |----_|-----------------|---|
+/// |-----|-----------------|---|
 /// | u8  | version;        | 0 |
 /// | u8  | type;           | 1 |
 /// | u16 | requestId;      | 2 |

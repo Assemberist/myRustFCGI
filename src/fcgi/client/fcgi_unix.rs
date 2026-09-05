@@ -24,4 +24,4 @@ pub struct FcgiClientUnix { }
 
 */
 
-impl FcgiClient<UnixStream> for UnixStream { }
+impl FcgiClient for UnixStream { }

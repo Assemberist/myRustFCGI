@@ -10,6 +10,7 @@ use fcgi::{
 };
 
 use fcgi::variables::get_allowed_ips;
+
 use fcgi::client::{FcgiListener, FcgiClient};
 
 fn main() -> std::io::Result<()> {
