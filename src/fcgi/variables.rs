@@ -13,3 +13,14 @@ pub fn get_allowed_ips() -> Option<HashSet<IpAddr>> {
     if ips.is_empty() { None }
     else { Some(ips) }
 }
+
+pub fn get_allowed_paths() -> Option<HashSet<String>> {
+    let value = env::var("FCGI_WEB_SERVER_ADDRS").ok()?;
+
+    let paths: HashSet<String> = value
+        .split(',')
+        .map(|s| String::from(s))
+        .collect();
+
+    Some(paths)
+}

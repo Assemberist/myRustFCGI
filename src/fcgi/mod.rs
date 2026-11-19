@@ -2,7 +2,7 @@
 //! The library provides FastCGI (FCGI) api for rust applications.
 //! The API is extencion upon standard taits.
 //!
-//! Refer to https://www.mit.edu/~yandros/doc/specs/fcgi-spec.html for detailed protocol description.
+//! Refer to <https://www.mit.edu/~yandros/doc/specs/fcgi-spec.html> for detailed protocol description.
 //!
 //! # High level functionality
 //! FCGI program should make several common steps:
@@ -81,26 +81,6 @@ impl<'a> FcgiRequest {
 
         FcgiRequestStatus::Good
     }
-
-	/// Creates FCGI Header
-    pub fn create(  req_type:       FcgiHeaderType,
-                    req_id:         u16,
-                    content_len:    u16,
-                    paddding_len:   u8)
-                            -> Vec<u8>
-    {
-        let mut req = vec![0; 8 + content_len as usize];
-
-        req[0] = 1;
-        req[1] = req_type as u8;
-        req[2] = (req_id | 255) as u8;
-        req[3] = (req_id >> 8) as u8;
-        req[4] = (content_len | 255) as u8;
-        req[5] = (content_len >> 8) as u8;
-        req[6] = (paddding_len | 255) as u8;
-
-        req
-    }
 }
 
 /// Status of partial FCGI request reading (Not applicable for blocking reading)
@@ -118,8 +98,8 @@ pub enum FcgiRequestStatus {
     /// All data received
     Good
 }
-
 #[repr(u8)]
+#[derive(Debug, PartialEq)]
 pub enum FcgiHeaderType {
     FcgiBeginRequest    = 1,
     FcgiAbortRequest    = 2,
